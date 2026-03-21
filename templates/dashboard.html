@@ -322,6 +322,39 @@
             </div>
         </div>
 
+        <!-- Strategy Ensemble & Monte Carlo -->
+        <div class="card">
+            <div class="card-title">Strategy Ensemble</div>
+            <div id="strategy-weights" class="signal-grid" style="margin-bottom:12px"></div>
+            <table>
+                <thead>
+                    <tr><th>Strike</th><th>Momentum</th><th>Mean Rev</th><th>Monte Carlo</th><th>Ensemble</th></tr>
+                </thead>
+                <tbody id="strategy-body"></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Monte Carlo Distribution (24h)</div>
+            <div class="stats-grid" id="mc-stats"></div>
+            <div style="margin-top:12px">
+                <div class="chart-container" style="height:120px">
+                    <canvas id="mcChart" class="price-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backtest Results -->
+        <div class="card full-width">
+            <div class="card-title">Backtest Results (Historical Validation)</div>
+            <div class="stats-grid" id="backtest-stats"></div>
+            <div style="margin-top:12px">
+                <div class="chart-container" style="height:120px">
+                    <canvas id="equityChart" class="price-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
         <!-- Top Opportunities -->
         <div class="card full-width">
             <div class="card-title">Trade Opportunities (Sorted by Expected Value)</div>
@@ -471,13 +504,93 @@
             return `<span class="${cls}">${sign}$${val.toFixed(2)}</span>`;
         }
 
+        function drawEquityCurve(canvasId, data) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !data || data.length < 2) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = canvas.offsetWidth * dpr;
+            canvas.height = canvas.offsetHeight * dpr;
+            ctx.scale(dpr, dpr);
+            const w = canvas.offsetWidth, h = canvas.offsetHeight;
+            const pad = {top:10, right:50, bottom:10, left:10};
+            const min = Math.min(...data, 0);
+            const max = Math.max(...data);
+            const range = max - min || 1;
+            const xStep = (w - pad.left - pad.right) / (data.length - 1);
+
+            // Zero line
+            const zeroY = pad.top + (1 - (0 - min) / range) * (h - pad.top - pad.bottom);
+            ctx.strokeStyle = '#30363d';
+            ctx.lineWidth = 0.5;
+            ctx.setLineDash([4,4]);
+            ctx.beginPath();
+            ctx.moveTo(pad.left, zeroY);
+            ctx.lineTo(w - pad.right, zeroY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.beginPath();
+            for (let i = 0; i < data.length; i++) {
+                const x = pad.left + i * xStep;
+                const y = pad.top + (1 - (data[i] - min) / range) * (h - pad.top - pad.bottom);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            const finalVal = data[data.length-1];
+            ctx.strokeStyle = finalVal >= 0 ? '#3fb950' : '#f85149';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            ctx.fillStyle = finalVal >= 0 ? '#3fb950' : '#f85149';
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'left';
+            const lastY = pad.top + (1 - (finalVal - min) / range) * (h - pad.top - pad.bottom);
+            ctx.fillText((finalVal>=0?'+':'') + '$' + finalVal.toFixed(2), w - pad.right + 5, lastY + 4);
+        }
+
+        function drawMCBars(canvasId, dist) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !dist) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = canvas.offsetWidth * dpr;
+            canvas.height = canvas.offsetHeight * dpr;
+            ctx.scale(dpr, dpr);
+            const w = canvas.offsetWidth, h = canvas.offsetHeight;
+            const pad = {top:15, right:50, bottom:15, left:10};
+            const labels = ['P5','P10','P25','P50','P75','P90','P95'];
+            const keys = ['p5','p10','p25','p50','p75','p90','p95'];
+            const values = keys.map(k => dist[k]);
+            const min = Math.min(...values) * 0.999;
+            const max = Math.max(...values) * 1.001;
+            const range = max - min || 1;
+            const barW = (w - pad.left - pad.right) / labels.length - 4;
+
+            for (let i = 0; i < labels.length; i++) {
+                const x = pad.left + i * (barW + 4);
+                const valH = ((values[i] - min) / range) * (h - pad.top - pad.bottom);
+                const y = h - pad.bottom - valH;
+                const isMedian = i === 3;
+                ctx.fillStyle = isMedian ? '#58a6ff' : (values[i] >= dist.p50 ? '#3fb95060' : '#f8514960');
+                ctx.fillRect(x, y, barW, valH);
+                ctx.fillStyle = '#8b949e';
+                ctx.font = '9px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(labels[i], x + barW/2, h - 2);
+                ctx.fillStyle = '#e6edf3';
+                ctx.fillText('$' + Math.round(values[i]).toLocaleString(), x + barW/2, y - 3);
+            }
+        }
+
         async function updateDashboard() {
             try {
-                const [priceData, signals, opps, trades] = await Promise.all([
+                const [priceData, signals, opps, trades, strategyData, backtestData] = await Promise.all([
                     fetchJSON('/api/price'),
                     fetchJSON('/api/signals'),
                     fetchJSON('/api/opportunities'),
                     fetchJSON('/api/trades'),
+                    fetchJSON('/api/strategy'),
+                    fetchJSON('/api/backtest'),
                 ]);
 
                 // Price
@@ -597,6 +710,57 @@
                     `).join('');
                 } else {
                     tradesBody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim)">No trades yet</td></tr>';
+                }
+
+                // Strategy ensemble
+                if (strategyData && strategyData.probabilities) {
+                    const weightsEl = document.getElementById('strategy-weights');
+                    if (strategyData.weights) {
+                        weightsEl.innerHTML = Object.entries(strategyData.weights).map(([k,v]) =>
+                            `<div class="signal-item"><div class="signal-label">${k}</div><div class="signal-value" style="font-size:16px">${(v*100).toFixed(0)}%</div><div class="signal-label">weight</div></div>`
+                        ).join('');
+                    }
+                    const stratBody = document.getElementById('strategy-body');
+                    stratBody.innerHTML = Object.entries(strategyData.probabilities).map(([strike, data]) => {
+                        const s = data.strategies || {};
+                        const e = data.ensemble || 0;
+                        const eColor = e > 0.55 ? 'var(--green)' : e < 0.45 ? 'var(--red)' : 'var(--text)';
+                        return `<tr>
+                            <td>$${Number(strike).toLocaleString()}</td>
+                            <td>${((s.momentum||0)*100).toFixed(1)}%</td>
+                            <td>${((s.mean_reversion||0)*100).toFixed(1)}%</td>
+                            <td>${((s.monte_carlo||0)*100).toFixed(1)}%</td>
+                            <td style="color:${eColor};font-weight:700">${(e*100).toFixed(1)}%</td>
+                        </tr>`;
+                    }).join('');
+                }
+
+                // Monte Carlo distribution
+                if (strategyData && strategyData.distribution) {
+                    const d = strategyData.distribution;
+                    document.getElementById('mc-stats').innerHTML = `
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px">$${d.median.toLocaleString()}</div><div class="stat-label">Median</div></div>
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px;color:${d.expected_move_pct>=0?'var(--green)':'var(--red)'}">${d.expected_move_pct>=0?'+':''}${d.expected_move_pct}%</div><div class="stat-label">Exp Move</div></div>
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px;color:var(--green)">${(d.prob_up*100).toFixed(0)}%</div><div class="stat-label">Prob Up</div></div>
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px;color:var(--red)">${(d.prob_down*100).toFixed(0)}%</div><div class="stat-label">Prob Down</div></div>
+                    `;
+                    drawMCBars('mcChart', d);
+                }
+
+                // Backtest
+                if (backtestData && !backtestData.error) {
+                    const b = backtestData;
+                    document.getElementById('backtest-stats').innerHTML = `
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px;color:${b.total_pnl>=0?'var(--green)':'var(--red)'}">${b.total_pnl>=0?'+':''}$${b.total_pnl.toFixed(2)}</div><div class="stat-label">Backtest P&L</div></div>
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px">${b.win_rate}%</div><div class="stat-label">Win Rate</div></div>
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px">${b.sharpe_ratio}</div><div class="stat-label">Sharpe</div></div>
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px;color:var(--red)">-$${b.max_drawdown.toFixed(2)}</div><div class="stat-label">Max DD</div></div>
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px">${b.direction_accuracy}%</div><div class="stat-label">Dir Accuracy</div></div>
+                        <div class="stat-item"><div class="stat-value" style="font-size:16px">${b.total_trades}</div><div class="stat-label">Trades</div></div>
+                    `;
+                    if (b.equity_curve && b.equity_curve.length > 1) {
+                        drawEquityCurve('equityChart', b.equity_curve);
+                    }
                 }
 
                 document.getElementById('last-update').textContent = new Date().toLocaleTimeString();

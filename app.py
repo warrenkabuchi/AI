@@ -15,6 +15,8 @@ from btc_tracker.price_fetcher import PriceFetcher
 from btc_tracker.signals import generate_signals
 from btc_tracker.kalshi import ContractAnalyzer, generate_simulated_contracts
 from btc_tracker.tracker import ProfitTracker
+from btc_tracker.strategy import StrategyEngine
+from btc_tracker.backtest import Backtester
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -26,12 +28,16 @@ app = Flask(__name__)
 fetcher = PriceFetcher()
 analyzer = ContractAnalyzer()
 tracker = ProfitTracker()
+strategy = StrategyEngine()
 
 # Cache for latest analysis
 latest_analysis = {
     "signals": None,
     "recommendations": [],
     "contracts": [],
+    "strategy_probs": None,
+    "distribution": None,
+    "backtest": None,
     "updated_at": None,
 }
 
@@ -107,6 +113,19 @@ def run_analysis():
         }
         for c in contracts
     ]
+    # Strategy ensemble probabilities for current price strikes
+    strategy_probs = {}
+    for offset in [-2000, -1000, -500, 0, 500, 1000, 2000]:
+        strike = round(current_price + offset, -2)
+        prob = strategy.estimate_probability(prices, strike, current_price)
+        strategy_probs[str(strike)] = prob
+
+    latest_analysis["strategy_probs"] = strategy_probs
+
+    # Monte Carlo distribution
+    dist = strategy.get_distribution(prices, current_price)
+    latest_analysis["distribution"] = dist
+
     latest_analysis["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     logger.info(
@@ -175,6 +194,40 @@ def api_chart():
             "direction": signals.direction if signals else "unknown",
             "confidence": signals.confidence if signals else 0,
         } if signals else None,
+    })
+
+
+@app.route("/api/strategy")
+def api_strategy():
+    """Return ensemble strategy probabilities and distribution."""
+    return jsonify({
+        "probabilities": latest_analysis.get("strategy_probs"),
+        "distribution": latest_analysis.get("distribution"),
+        "weights": strategy.get_strategy_weights(),
+    })
+
+
+@app.route("/api/backtest")
+def api_backtest():
+    """Run backtest on historical data and return results."""
+    prices = fetcher.get_prices_as_list()
+    if len(prices) < 100:
+        return jsonify({"error": "Need more historical data for backtest"})
+
+    bt = Backtester(lookback=50, forecast_horizon=12)
+    result = bt.run(prices)
+    return jsonify({
+        "total_trades": result.total_trades,
+        "wins": result.wins,
+        "losses": result.losses,
+        "win_rate": result.win_rate,
+        "total_pnl": result.total_pnl,
+        "max_drawdown": result.max_drawdown,
+        "sharpe_ratio": result.sharpe_ratio,
+        "avg_ev": result.avg_ev,
+        "avg_edge": result.avg_edge,
+        "direction_accuracy": result.direction_accuracy,
+        "equity_curve": result.equity_curve[-100:],  # Last 100 points
     })
 
 
