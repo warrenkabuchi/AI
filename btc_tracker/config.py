@@ -57,6 +57,10 @@ KALSHI_BASE_URL = (
     else "https://demo-api.kalshi.co/trade-api/v2"
 )
 
+# --- Paper Trading ---
+PAPER_TRADE_ENABLED = _get_bool("PAPER_TRADE_ENABLED", True)
+PAPER_STARTING_BALANCE = _get_float("PAPER_STARTING_BALANCE", 1000.00)
+
 # --- Trading Controls ---
 AUTO_TRADE_ENABLED = _get_bool("AUTO_TRADE_ENABLED", False)
 MAX_BET_SIZE = _get_float("MAX_BET_SIZE", 5.00)
@@ -85,6 +89,8 @@ def get_config_summary():
     return {
         "kalshi_configured": is_kalshi_configured(),
         "kalshi_env": KALSHI_ENV,
+        "paper_trade_enabled": PAPER_TRADE_ENABLED,
+        "paper_starting_balance": PAPER_STARTING_BALANCE,
         "auto_trade_enabled": AUTO_TRADE_ENABLED,
         "max_bet_size": MAX_BET_SIZE,
         "max_daily_exposure": MAX_DAILY_EXPOSURE,

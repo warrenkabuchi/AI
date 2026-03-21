@@ -341,6 +341,86 @@
             </div>
         </div>
 
+        <!-- Paper Trading Portfolio -->
+        <div class="card full-width" id="paper-portfolio" style="display:none">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+                <span>Paper Trading Portfolio</span>
+                <span class="badge badge-pending" style="font-size:11px">VIRTUAL MONEY</span>
+            </div>
+
+            <!-- Account Summary -->
+            <div class="stats-grid" id="paper-stats" style="margin-bottom:16px">
+                <div class="stat-item">
+                    <div class="stat-value" id="paper-equity">$1,000</div>
+                    <div class="stat-label">Total Equity</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="paper-cash">$1,000</div>
+                    <div class="stat-label">Cash</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="paper-pnl">$0.00</div>
+                    <div class="stat-label">Realized P&L</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="paper-roi">0.0%</div>
+                    <div class="stat-label">ROI</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="paper-winrate">0%</div>
+                    <div class="stat-label">Win Rate</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="paper-record">0W / 0L</div>
+                    <div class="stat-label">Record</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="paper-drawdown">$0</div>
+                    <div class="stat-label">Max Drawdown</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="paper-open-count">0</div>
+                    <div class="stat-label">Open Positions</div>
+                </div>
+            </div>
+
+            <!-- Equity Curve -->
+            <div class="chart-container" style="height:100px;margin-bottom:16px">
+                <canvas id="paperEquityChart" class="price-chart"></canvas>
+            </div>
+
+            <!-- Confidence Breakdown -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                <div>
+                    <div class="card-title">By Confidence</div>
+                    <table>
+                        <thead><tr><th>Level</th><th>Trades</th><th>Win Rate</th><th>P&L</th></tr></thead>
+                        <tbody id="paper-conf-body"></tbody>
+                    </table>
+                </div>
+                <div>
+                    <div class="card-title">Open Positions</div>
+                    <table>
+                        <thead><tr><th>Contract</th><th>Side</th><th>Qty</th><th>Entry</th><th>Cost</th><th>EV</th></tr></thead>
+                        <tbody id="paper-positions-body">
+                            <tr><td colspan="6" style="text-align:center;color:var(--text-dim)">No open positions</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recent Settlements -->
+            <div style="margin-top:16px">
+                <div class="card-title">Recent Settlements</div>
+                <table>
+                    <thead><tr><th>Contract</th><th>Side</th><th>Qty</th><th>Entry</th><th>Outcome</th><th>P&L</th><th>Settled</th></tr></thead>
+                    <tbody id="paper-settled-body">
+                        <tr><td colspan="7" style="text-align:center;color:var(--text-dim)">No settlements yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Price Chart -->
         <div class="card full-width">
             <div class="card-title">BTC Price (7d)</div>
@@ -692,7 +772,7 @@
 
         async function updateDashboard() {
             try {
-                const [priceData, signals, opps, trades, strategyData, backtestData, cfgData, execData] = await Promise.all([
+                const [priceData, signals, opps, trades, strategyData, backtestData, cfgData, execData, portfolioData] = await Promise.all([
                     fetchJSON('/api/price'),
                     fetchJSON('/api/signals'),
                     fetchJSON('/api/opportunities'),
@@ -701,6 +781,7 @@
                     fetchJSON('/api/backtest'),
                     fetchJSON('/api/config'),
                     fetchJSON('/api/executor'),
+                    fetchJSON('/api/portfolio'),
                 ]);
 
                 // Price
@@ -873,10 +954,84 @@
                     }
                 }
 
+                // Paper Trading Portfolio
+                if (portfolioData && portfolioData.mode === 'paper' && portfolioData.stats) {
+                    document.getElementById('paper-portfolio').style.display = 'block';
+                    const ps = portfolioData.stats;
+
+                    document.getElementById('paper-equity').textContent = '$' + ps.total_equity.toLocaleString(undefined, {minimumFractionDigits:2});
+                    document.getElementById('paper-equity').style.color = ps.total_equity >= ps.starting_balance ? 'var(--green)' : 'var(--red)';
+                    document.getElementById('paper-cash').textContent = '$' + ps.cash_balance.toLocaleString(undefined, {minimumFractionDigits:2});
+                    const pnlEl = document.getElementById('paper-pnl');
+                    pnlEl.textContent = (ps.total_pnl >= 0 ? '+' : '') + '$' + ps.total_pnl.toFixed(2);
+                    pnlEl.style.color = ps.total_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                    const roiEl = document.getElementById('paper-roi');
+                    roiEl.textContent = (ps.roi >= 0 ? '+' : '') + ps.roi.toFixed(1) + '%';
+                    roiEl.style.color = ps.roi >= 0 ? 'var(--green)' : 'var(--red)';
+                    const wrEl = document.getElementById('paper-winrate');
+                    wrEl.textContent = ps.win_rate.toFixed(0) + '%';
+                    wrEl.style.color = ps.win_rate >= 50 ? 'var(--green)' : 'var(--red)';
+                    document.getElementById('paper-record').textContent = ps.wins + 'W / ' + ps.losses + 'L';
+                    document.getElementById('paper-drawdown').textContent = '-$' + ps.max_drawdown.toFixed(2);
+                    document.getElementById('paper-drawdown').style.color = 'var(--red)';
+                    document.getElementById('paper-open-count').textContent = ps.open_count;
+
+                    // Paper equity curve
+                    if (ps.equity_curve && ps.equity_curve.length > 1) {
+                        drawEquityCurve('paperEquityChart', ps.equity_curve.map(s => s.eq));
+                    }
+
+                    // Confidence breakdown
+                    const pcBody = document.getElementById('paper-conf-body');
+                    pcBody.innerHTML = ['high', 'medium', 'low'].map(c => {
+                        const d = ps.by_confidence[c] || {};
+                        return `<tr>
+                            <td><span class="badge badge-${c}">${c.toUpperCase()}</span></td>
+                            <td>${d.trades || 0}</td>
+                            <td>${(d.win_rate || 0).toFixed(0)}%</td>
+                            <td>${formatPnl(d.pnl || 0)}</td>
+                        </tr>`;
+                    }).join('');
+
+                    // Open positions
+                    const posBody = document.getElementById('paper-positions-body');
+                    if (portfolioData.positions && portfolioData.positions.length > 0) {
+                        posBody.innerHTML = portfolioData.positions.map(p => `<tr>
+                            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${p.title}</td>
+                            <td><span class="badge badge-${p.side}">${p.side.toUpperCase()}</span></td>
+                            <td>${p.count}</td>
+                            <td>$${p.avg_price.toFixed(2)}</td>
+                            <td>$${p.cost.toFixed(2)}</td>
+                            <td class="ev-positive">+${p.ev.toFixed(3)}</td>
+                        </tr>`).join('');
+                    } else {
+                        posBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim)">No open positions</td></tr>';
+                    }
+
+                    // Settled positions
+                    const settBody = document.getElementById('paper-settled-body');
+                    if (portfolioData.settled && portfolioData.settled.length > 0) {
+                        settBody.innerHTML = portfolioData.settled.reverse().map(s => `<tr>
+                            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${s.title}</td>
+                            <td><span class="badge badge-${s.side}">${s.side.toUpperCase()}</span></td>
+                            <td>${s.count}</td>
+                            <td>$${s.avg_price.toFixed(2)}</td>
+                            <td><span class="badge badge-${s.outcome === 'WIN' ? 'win' : 'loss'}">${s.outcome}</span></td>
+                            <td>${formatPnl(s.pnl)}</td>
+                            <td>${formatTime(s.settled_at)}</td>
+                        </tr>`).join('');
+                    } else {
+                        settBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim)">No settlements yet</td></tr>';
+                    }
+                }
+
                 // Config & Executor status bar
                 if (execData) {
                     const apiB = document.getElementById('api-status-badge');
-                    if (execData.kalshi_configured) {
+                    if (execData.paper_trade_enabled) {
+                        apiB.textContent = 'PAPER MODE';
+                        apiB.className = 'badge badge-pending';
+                    } else if (execData.kalshi_configured) {
                         apiB.textContent = 'CONNECTED';
                         apiB.className = 'badge badge-win';
                     } else {
@@ -885,16 +1040,32 @@
                     }
 
                     const envB = document.getElementById('env-badge');
-                    envB.textContent = (execData.kalshi_env || 'demo').toUpperCase();
-                    envB.className = 'badge ' + (execData.kalshi_env === 'production' ? 'badge-loss' : 'badge-pending');
+                    if (execData.paper_trade_enabled) {
+                        envB.textContent = 'PAPER';
+                        envB.className = 'badge badge-pending';
+                    } else {
+                        envB.textContent = (execData.kalshi_env || 'demo').toUpperCase();
+                        envB.className = 'badge ' + (execData.kalshi_env === 'production' ? 'badge-loss' : 'badge-pending');
+                    }
 
                     const atB = document.getElementById('autotrade-badge');
-                    if (execData.auto_trade_enabled) {
+                    if (execData.paper_trade_enabled) {
+                        atB.textContent = 'PAPER';
+                        atB.className = 'badge badge-pending';
+                    } else if (execData.auto_trade_enabled) {
                         atB.textContent = 'ON';
                         atB.className = 'badge badge-win';
                     } else {
                         atB.textContent = 'OFF';
                         atB.className = 'badge badge-low';
+                    }
+
+                    // Show paper P&L in status bar if paper mode
+                    if (execData.paper_stats) {
+                        const dp = document.getElementById('daily-pnl');
+                        const totalPnl = execData.paper_stats.total_pnl;
+                        dp.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
+                        dp.style.color = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
                     }
 
                     const dp = document.getElementById('daily-pnl');

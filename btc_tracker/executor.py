@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from btc_tracker import config
 from btc_tracker.kalshi_client import KalshiClient
+from btc_tracker.paper_trader import PaperTrader
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class TradingExecutor:
 
     def __init__(self):
         self.client = KalshiClient()
+        self.paper = PaperTrader(starting_balance=config.PAPER_STARTING_BALANCE)
         self._lock = threading.Lock()
         self.daily_pnl = 0.0
         self.daily_exposure = 0.0
@@ -57,13 +59,13 @@ class TradingExecutor:
         """Run all safety checks before trading. Returns (ok, reason)."""
         self._reset_daily_if_needed()
 
-        # Check if auto-trading is enabled
-        if not config.AUTO_TRADE_ENABLED:
-            return False, "Auto-trading is disabled"
+        # Check if any trading mode is enabled
+        if not config.AUTO_TRADE_ENABLED and not config.PAPER_TRADE_ENABLED:
+            return False, "Auto-trading and paper trading are both disabled"
 
-        # Check if Kalshi API is configured
-        if not self.client.is_configured:
-            return False, "Kalshi API not configured"
+        # For live trading, require Kalshi API
+        if not config.PAPER_TRADE_ENABLED and not self.client.is_configured:
+            return False, "Kalshi API not configured and paper trading disabled"
 
         # Check minimum EV
         if recommendation.ev < config.MIN_EV_THRESHOLD:
@@ -127,9 +129,10 @@ class TradingExecutor:
 
         return contracts
 
-    def execute(self, recommendation):
+    def execute(self, recommendation, btc_price=None):
         """
-        Execute a trade recommendation on Kalshi.
+        Execute a trade recommendation.
+        Routes to paper trader or live Kalshi based on config.
         Returns ExecutionResult.
         """
         with self._lock:
@@ -146,64 +149,146 @@ class TradingExecutor:
                      if side == "yes"
                      else recommendation.contract.no_price)
 
-            try:
-                order = self.client.place_order(
-                    ticker=ticker,
-                    side=side,
-                    action="buy",
-                    count=count,
-                    order_type="market",
-                )
+            # Route: paper trading or live
+            if config.PAPER_TRADE_ENABLED:
+                return self._execute_paper(recommendation, ticker, side,
+                                           count, price, btc_price or 0)
+            else:
+                return self._execute_live(recommendation, ticker, side,
+                                          count, price)
 
-                order_id = order.get("order_id", "unknown")
-                cost = price * count
-                self.daily_exposure += cost
-                self.open_position_count += 1
+    def _execute_paper(self, recommendation, ticker, side, count, price, btc_price):
+        """Execute via paper trader."""
+        success, info = self.paper.place_order(
+            ticker=ticker,
+            title=recommendation.contract.title,
+            side=side,
+            direction=recommendation.contract.direction,
+            strike_price=recommendation.contract.strike_price,
+            count=count,
+            price=price,
+            btc_price=btc_price,
+            ev=recommendation.ev,
+            edge=recommendation.edge,
+            confidence=recommendation.confidence,
+        )
 
-                result = ExecutionResult(
-                    success=True,
-                    order_id=order_id,
-                    message=f"Placed {side.upper()} {count}x {ticker}",
-                    ticker=ticker,
-                    side=side.upper(),
-                    count=count,
-                    price=price,
-                )
+        if not success:
+            return ExecutionResult(success=False, message=info.get("error", "Paper order failed"))
 
-                self.execution_log.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "ticker": ticker,
-                    "side": side.upper(),
-                    "count": count,
-                    "price": price,
-                    "cost": cost,
-                    "order_id": order_id,
-                    "ev": recommendation.ev,
-                    "edge": recommendation.edge,
-                    "confidence": recommendation.confidence,
-                })
+        order_id = info["order_id"]
+        cost = price * count
+        self.daily_exposure += cost
+        self.open_position_count += 1
 
-                logger.info(
-                    f"TRADE EXECUTED: {side.upper()} {count}x {ticker} "
-                    f"@ ${price:.2f} (EV: {recommendation.ev:+.3f})"
-                )
-                return result
+        result = ExecutionResult(
+            success=True,
+            order_id=order_id,
+            message=f"[PAPER] {side.upper()} {count}x {ticker}",
+            ticker=ticker,
+            side=side.upper(),
+            count=count,
+            price=price,
+        )
 
-            except Exception as e:
-                msg = f"Order failed: {e}"
-                logger.error(msg)
-                return ExecutionResult(success=False, message=msg)
+        self.execution_log.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "ticker": ticker,
+            "side": side.upper(),
+            "count": count,
+            "price": price,
+            "cost": cost,
+            "order_id": order_id,
+            "ev": recommendation.ev,
+            "edge": recommendation.edge,
+            "confidence": recommendation.confidence,
+            "mode": "paper",
+        })
+
+        logger.info(
+            f"PAPER TRADE: {side.upper()} {count}x {ticker} "
+            f"@ ${price:.2f} (EV: {recommendation.ev:+.3f})"
+        )
+        return result
+
+    def _execute_live(self, recommendation, ticker, side, count, price):
+        """Execute via live Kalshi API."""
+        try:
+            order = self.client.place_order(
+                ticker=ticker,
+                side=side,
+                action="buy",
+                count=count,
+                order_type="market",
+            )
+
+            order_id = order.get("order_id", "unknown")
+            cost = price * count
+            self.daily_exposure += cost
+            self.open_position_count += 1
+
+            result = ExecutionResult(
+                success=True,
+                order_id=order_id,
+                message=f"Placed {side.upper()} {count}x {ticker}",
+                ticker=ticker,
+                side=side.upper(),
+                count=count,
+                price=price,
+            )
+
+            self.execution_log.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "ticker": ticker,
+                "side": side.upper(),
+                "count": count,
+                "price": price,
+                "cost": cost,
+                "order_id": order_id,
+                "ev": recommendation.ev,
+                "edge": recommendation.edge,
+                "confidence": recommendation.confidence,
+                "mode": "live",
+            })
+
+            logger.info(
+                f"LIVE TRADE: {side.upper()} {count}x {ticker} "
+                f"@ ${price:.2f} (EV: {recommendation.ev:+.3f})"
+            )
+            return result
+
+        except Exception as e:
+            msg = f"Order failed: {e}"
+            logger.error(msg)
+            return ExecutionResult(success=False, message=msg)
 
     def update_pnl(self, pnl_change):
         """Update daily P&L tracking."""
         with self._lock:
             self.daily_pnl += pnl_change
 
+    def settle_paper_positions(self, current_btc_price):
+        """Settle paper trading positions based on current BTC price."""
+        if config.PAPER_TRADE_ENABLED:
+            settled = self.paper.settle_positions(current_btc_price)
+            for pos in settled:
+                self.update_pnl(pos.pnl)
+                if pos.status != "open":
+                    self.open_position_count = max(0, self.open_position_count - 1)
+            return settled
+        return []
+
     def get_status(self):
         """Get executor status for dashboard."""
         self._reset_daily_if_needed()
+        paper_stats = self.paper.get_full_stats() if config.PAPER_TRADE_ENABLED else None
+        trading_mode = "paper" if config.PAPER_TRADE_ENABLED else (
+            "live" if self.client.is_configured else "disabled"
+        )
         return {
+            "trading_mode": trading_mode,
             "auto_trade_enabled": config.AUTO_TRADE_ENABLED,
+            "paper_trade_enabled": config.PAPER_TRADE_ENABLED,
             "kalshi_configured": self.client.is_configured,
             "kalshi_env": config.KALSHI_ENV,
             "daily_pnl": round(self.daily_pnl, 2),
@@ -216,16 +301,27 @@ class TradingExecutor:
             "min_confidence": config.MIN_CONFIDENCE,
             "daily_loss_limit": config.DAILY_LOSS_LIMIT,
             "recent_executions": self.execution_log[-10:],
+            "paper_stats": paper_stats,
         }
 
     def get_portfolio(self):
-        """Fetch live portfolio data from Kalshi."""
+        """Fetch portfolio data (paper or live)."""
+        if config.PAPER_TRADE_ENABLED:
+            return {
+                "mode": "paper",
+                "balance": self.paper.get_balance(),
+                "positions": self.paper.get_positions(),
+                "settled": self.paper.get_settled(20),
+                "fills": self.paper.get_fills(30),
+                "stats": self.paper.get_full_stats(),
+            }
         if not self.client.is_configured:
             return None
         try:
             balance = self.client.get_balance()
             positions = self.client.get_positions()
             return {
+                "mode": "live",
                 "balance": balance,
                 "positions": positions,
             }

@@ -82,14 +82,18 @@ def run_analysis():
     for rec in recommendations[:3]:
         tracker.record_trade(rec, current_price)
 
-    # Auto-execute trades if enabled
-    if config.AUTO_TRADE_ENABLED:
+    # Auto-execute trades (paper or live)
+    if config.AUTO_TRADE_ENABLED or config.PAPER_TRADE_ENABLED:
         for rec in recommendations[:3]:
-            result = executor.execute(rec)
+            result = executor.execute(rec, btc_price=current_price)
             if result.success:
-                logger.info(f"Auto-trade: {result.message}")
+                logger.info(f"Trade: {result.message}")
 
-    # Resolve old pending trades for demo
+    # Settle paper positions based on current price
+    if config.PAPER_TRADE_ENABLED:
+        executor.settle_paper_positions(current_price)
+
+    # Resolve old pending trades for demo tracker
     tracker.resolve_all_pending(current_price)
 
     # Update cache
@@ -286,8 +290,11 @@ def start_scheduler():
 if __name__ == "__main__":
     logging.getLogger().setLevel(getattr(logging, config.LOG_LEVEL, logging.INFO))
     logger.info("Starting BTC Tracker for Kalshi...")
-    logger.info(f"Environment: {config.KALSHI_ENV}")
-    logger.info(f"Kalshi API: {'configured' if config.is_kalshi_configured() else 'NOT configured (using simulated data)'}")
+    if config.PAPER_TRADE_ENABLED:
+        logger.info(f"Mode: PAPER TRADING (starting balance: ${config.PAPER_STARTING_BALANCE:.2f})")
+    else:
+        logger.info(f"Environment: {config.KALSHI_ENV}")
+        logger.info(f"Kalshi API: {'configured' if config.is_kalshi_configured() else 'NOT configured (using simulated data)'}")
     logger.info(f"Auto-trading: {'ENABLED' if config.AUTO_TRADE_ENABLED else 'disabled'}")
 
     # Seed with historical data
