@@ -11,12 +11,15 @@ from dataclasses import asdict
 from flask import Flask, render_template, jsonify
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from btc_tracker import config
 from btc_tracker.price_fetcher import PriceFetcher
 from btc_tracker.signals import generate_signals
 from btc_tracker.kalshi import ContractAnalyzer, generate_simulated_contracts
+from btc_tracker.kalshi_client import KalshiClient
 from btc_tracker.tracker import ProfitTracker
 from btc_tracker.strategy import StrategyEngine
 from btc_tracker.backtest import Backtester
+from btc_tracker.executor import TradingExecutor
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -29,6 +32,7 @@ fetcher = PriceFetcher()
 analyzer = ContractAnalyzer()
 tracker = ProfitTracker()
 strategy = StrategyEngine()
+executor = TradingExecutor()
 
 # Cache for latest analysis
 latest_analysis = {
@@ -53,8 +57,17 @@ def run_analysis():
     signals = generate_signals(prices)
     current_price = fetcher.current_price
 
-    # Generate simulated Kalshi contracts (replace with real API in production)
-    contracts = generate_simulated_contracts(current_price)
+    # Fetch contracts: live from Kalshi if configured, otherwise simulated
+    if config.is_kalshi_configured():
+        try:
+            kalshi = KalshiClient()
+            contracts = kalshi.get_btc_markets()
+            logger.info(f"Using live Kalshi data: {len(contracts)} contracts")
+        except Exception as e:
+            logger.warning(f"Kalshi API failed, using simulated: {e}")
+            contracts = generate_simulated_contracts(current_price)
+    else:
+        contracts = generate_simulated_contracts(current_price)
 
     # Scan for +EV opportunities
     recommendations = analyzer.scan_opportunities(
@@ -66,8 +79,15 @@ def run_analysis():
     )
 
     # Record top recommendations
-    for rec in recommendations[:3]:  # Top 3 picks
+    for rec in recommendations[:3]:
         tracker.record_trade(rec, current_price)
+
+    # Auto-execute trades if enabled
+    if config.AUTO_TRADE_ENABLED:
+        for rec in recommendations[:3]:
+            result = executor.execute(rec)
+            if result.success:
+                logger.info(f"Auto-trade: {result.message}")
 
     # Resolve old pending trades for demo
     tracker.resolve_all_pending(current_price)
@@ -207,6 +227,27 @@ def api_strategy():
     })
 
 
+@app.route("/api/config")
+def api_config():
+    """Return current configuration (no secrets)."""
+    return jsonify(config.get_config_summary())
+
+
+@app.route("/api/executor")
+def api_executor():
+    """Return executor status and recent executions."""
+    return jsonify(executor.get_status())
+
+
+@app.route("/api/portfolio")
+def api_portfolio():
+    """Return live Kalshi portfolio data."""
+    data = executor.get_portfolio()
+    if data is None:
+        return jsonify({"error": "Kalshi API not configured or unavailable"})
+    return jsonify(data)
+
+
 @app.route("/api/backtest")
 def api_backtest():
     """Run backtest on historical data and return results."""
@@ -236,15 +277,18 @@ def api_backtest():
 def start_scheduler():
     """Start background price monitoring."""
     scheduler = BackgroundScheduler()
-    # Fetch price every 60 seconds
-    scheduler.add_job(run_analysis, "interval", seconds=60, id="analysis",
-                      max_instances=1, misfire_grace_time=30)
+    scheduler.add_job(run_analysis, "interval", seconds=config.UPDATE_INTERVAL,
+                      id="analysis", max_instances=1, misfire_grace_time=30)
     scheduler.start()
-    logger.info("Scheduler started - updating every 60 seconds")
+    logger.info(f"Scheduler started - updating every {config.UPDATE_INTERVAL}s")
 
 
 if __name__ == "__main__":
+    logging.getLogger().setLevel(getattr(logging, config.LOG_LEVEL, logging.INFO))
     logger.info("Starting BTC Tracker for Kalshi...")
+    logger.info(f"Environment: {config.KALSHI_ENV}")
+    logger.info(f"Kalshi API: {'configured' if config.is_kalshi_configured() else 'NOT configured (using simulated data)'}")
+    logger.info(f"Auto-trading: {'ENABLED' if config.AUTO_TRADE_ENABLED else 'disabled'}")
 
     # Seed with historical data
     logger.info("Fetching historical price data...")
@@ -258,4 +302,4 @@ if __name__ == "__main__":
     start_scheduler()
 
     # Run Flask
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    app.run(host="0.0.0.0", port=config.PORT, debug=False)

@@ -220,8 +220,21 @@
             color: var(--text-dim);
         }
 
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 12px;
+            border-bottom: 1px solid rgba(48,54,61,0.3);
+        }
+        .setting-row span:last-child {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }
+
         @media (max-width: 768px) {
             .grid { grid-template-columns: 1fr; }
+            #settings-panel > div:first-of-type { grid-template-columns: 1fr !important; }
         }
     </style>
 </head>
@@ -238,6 +251,96 @@
     </div>
 
     <div class="grid">
+        <!-- Trading Status Bar -->
+        <div class="card full-width" id="trading-status-bar" style="padding:12px 16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                <div style="display:flex;align-items:center;gap:16px">
+                    <div>
+                        <span class="signal-label">API Status</span>
+                        <span class="badge" id="api-status-badge" style="margin-left:4px">--</span>
+                    </div>
+                    <div>
+                        <span class="signal-label">Environment</span>
+                        <span class="badge" id="env-badge" style="margin-left:4px">--</span>
+                    </div>
+                    <div>
+                        <span class="signal-label">Auto-Trade</span>
+                        <span class="badge" id="autotrade-badge" style="margin-left:4px">--</span>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:16px">
+                    <div>
+                        <span class="signal-label">Daily P&L</span>
+                        <span id="daily-pnl" style="font-weight:700;font-family:monospace;margin-left:4px">$0.00</span>
+                    </div>
+                    <div>
+                        <span class="signal-label">Exposure</span>
+                        <span id="daily-exposure" style="font-family:monospace;margin-left:4px">$0 / $0</span>
+                    </div>
+                    <div>
+                        <span class="signal-label">Positions</span>
+                        <span id="open-positions" style="font-family:monospace;margin-left:4px">0 / 0</span>
+                    </div>
+                    <button onclick="toggleSettings()" style="background:var(--border);color:var(--text);border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px">Settings</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Panel (collapsed by default) -->
+        <div class="card full-width" id="settings-panel" style="display:none">
+            <div class="card-title">Configuration (.env)</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+                <div>
+                    <h3 style="font-size:13px;margin-bottom:8px;color:var(--blue)">Kalshi API</h3>
+                    <div class="setting-row">
+                        <span class="signal-label">Status</span>
+                        <span id="cfg-api-status">--</span>
+                    </div>
+                    <div class="setting-row">
+                        <span class="signal-label">Environment</span>
+                        <span id="cfg-env">--</span>
+                    </div>
+                    <div style="margin-top:8px;padding:10px;background:var(--bg);border-radius:6px;font-size:11px;color:var(--text-dim)">
+                        <strong style="color:var(--yellow)">Setup:</strong><br>
+                        1. Copy <code>.env.example</code> to <code>.env</code><br>
+                        2. Set <code>KALSHI_API_KEY_ID</code><br>
+                        3. Set <code>KALSHI_PRIVATE_KEY_PATH</code><br>
+                        4. Restart the app
+                    </div>
+                </div>
+                <div>
+                    <h3 style="font-size:13px;margin-bottom:8px;color:var(--blue)">Trading Controls</h3>
+                    <div class="setting-row"><span class="signal-label">Auto Trade</span> <span id="cfg-autotrade">--</span></div>
+                    <div class="setting-row"><span class="signal-label">Max Bet</span> <span id="cfg-maxbet">--</span></div>
+                    <div class="setting-row"><span class="signal-label">Max Daily</span> <span id="cfg-maxdaily">--</span></div>
+                    <div class="setting-row"><span class="signal-label">Min EV</span> <span id="cfg-minev">--</span></div>
+                    <div class="setting-row"><span class="signal-label">Min Confidence</span> <span id="cfg-minconf">--</span></div>
+                    <div class="setting-row"><span class="signal-label">Max Positions</span> <span id="cfg-maxpos">--</span></div>
+                </div>
+                <div>
+                    <h3 style="font-size:13px;margin-bottom:8px;color:var(--blue)">Risk Management</h3>
+                    <div class="setting-row"><span class="signal-label">Daily Loss Limit</span> <span id="cfg-losslimit">--</span></div>
+                    <div class="setting-row"><span class="signal-label">Kelly Fraction</span> <span id="cfg-kelly">--</span></div>
+                    <div class="setting-row"><span class="signal-label">Update Interval</span> <span id="cfg-interval">--</span></div>
+                    <div style="margin-top:12px;padding:10px;background:var(--bg);border-radius:6px;font-size:11px;color:var(--text-dim)">
+                        <strong style="color:var(--yellow)">Tip:</strong> Start with <code>KALSHI_ENV=demo</code> to paper trade. Set <code>AUTO_TRADE_ENABLED=true</code> only after verifying backtest results.
+                    </div>
+                </div>
+            </div>
+            <!-- Recent Executions -->
+            <div style="margin-top:16px">
+                <div class="card-title">Recent Executions</div>
+                <table>
+                    <thead>
+                        <tr><th>Time</th><th>Ticker</th><th>Side</th><th>Qty</th><th>Price</th><th>EV</th><th>Edge</th><th>Confidence</th></tr>
+                    </thead>
+                    <tbody id="executions-body">
+                        <tr><td colspan="8" style="text-align:center;color:var(--text-dim)">No executions yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Price Chart -->
         <div class="card full-width">
             <div class="card-title">BTC Price (7d)</div>
@@ -504,6 +607,11 @@
             return `<span class="${cls}">${sign}$${val.toFixed(2)}</span>`;
         }
 
+        function toggleSettings() {
+            const panel = document.getElementById('settings-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        }
+
         function drawEquityCurve(canvasId, data) {
             const canvas = document.getElementById(canvasId);
             if (!canvas || !data || data.length < 2) return;
@@ -584,13 +692,15 @@
 
         async function updateDashboard() {
             try {
-                const [priceData, signals, opps, trades, strategyData, backtestData] = await Promise.all([
+                const [priceData, signals, opps, trades, strategyData, backtestData, cfgData, execData] = await Promise.all([
                     fetchJSON('/api/price'),
                     fetchJSON('/api/signals'),
                     fetchJSON('/api/opportunities'),
                     fetchJSON('/api/trades'),
                     fetchJSON('/api/strategy'),
                     fetchJSON('/api/backtest'),
+                    fetchJSON('/api/config'),
+                    fetchJSON('/api/executor'),
                 ]);
 
                 // Price
@@ -761,6 +871,72 @@
                     if (b.equity_curve && b.equity_curve.length > 1) {
                         drawEquityCurve('equityChart', b.equity_curve);
                     }
+                }
+
+                // Config & Executor status bar
+                if (execData) {
+                    const apiB = document.getElementById('api-status-badge');
+                    if (execData.kalshi_configured) {
+                        apiB.textContent = 'CONNECTED';
+                        apiB.className = 'badge badge-win';
+                    } else {
+                        apiB.textContent = 'NOT SET';
+                        apiB.className = 'badge badge-loss';
+                    }
+
+                    const envB = document.getElementById('env-badge');
+                    envB.textContent = (execData.kalshi_env || 'demo').toUpperCase();
+                    envB.className = 'badge ' + (execData.kalshi_env === 'production' ? 'badge-loss' : 'badge-pending');
+
+                    const atB = document.getElementById('autotrade-badge');
+                    if (execData.auto_trade_enabled) {
+                        atB.textContent = 'ON';
+                        atB.className = 'badge badge-win';
+                    } else {
+                        atB.textContent = 'OFF';
+                        atB.className = 'badge badge-low';
+                    }
+
+                    const dp = document.getElementById('daily-pnl');
+                    dp.textContent = (execData.daily_pnl >= 0 ? '+' : '') + '$' + execData.daily_pnl.toFixed(2);
+                    dp.style.color = execData.daily_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+                    document.getElementById('daily-exposure').textContent =
+                        `$${execData.daily_exposure.toFixed(0)} / $${execData.max_daily_exposure}`;
+                    document.getElementById('open-positions').textContent =
+                        `${execData.open_positions} / ${execData.max_positions}`;
+
+                    // Executions table
+                    if (execData.recent_executions && execData.recent_executions.length > 0) {
+                        document.getElementById('executions-body').innerHTML =
+                            execData.recent_executions.reverse().map(e => `<tr>
+                                <td>${formatTime(e.timestamp)}</td>
+                                <td>${e.ticker}</td>
+                                <td><span class="badge badge-${e.side.toLowerCase()}">${e.side}</span></td>
+                                <td>${e.count}</td>
+                                <td>$${e.price.toFixed(2)}</td>
+                                <td class="ev-positive">+${e.ev.toFixed(3)}</td>
+                                <td>${(e.edge*100).toFixed(1)}%</td>
+                                <td><span class="badge badge-${e.confidence}">${e.confidence.toUpperCase()}</span></td>
+                            </tr>`).join('');
+                    }
+                }
+
+                // Config panel
+                if (cfgData) {
+                    document.getElementById('cfg-api-status').textContent = cfgData.kalshi_configured ? 'Configured' : 'Not configured';
+                    document.getElementById('cfg-api-status').style.color = cfgData.kalshi_configured ? 'var(--green)' : 'var(--red)';
+                    document.getElementById('cfg-env').textContent = cfgData.kalshi_env.toUpperCase();
+                    document.getElementById('cfg-autotrade').textContent = cfgData.auto_trade_enabled ? 'ENABLED' : 'DISABLED';
+                    document.getElementById('cfg-autotrade').style.color = cfgData.auto_trade_enabled ? 'var(--green)' : 'var(--text-dim)';
+                    document.getElementById('cfg-maxbet').textContent = '$' + cfgData.max_bet_size.toFixed(2);
+                    document.getElementById('cfg-maxdaily').textContent = '$' + cfgData.max_daily_exposure.toFixed(2);
+                    document.getElementById('cfg-minev').textContent = cfgData.min_ev_threshold.toFixed(2);
+                    document.getElementById('cfg-minconf').textContent = cfgData.min_confidence.toUpperCase();
+                    document.getElementById('cfg-maxpos').textContent = cfgData.max_open_positions;
+                    document.getElementById('cfg-losslimit').textContent = '$' + cfgData.daily_loss_limit.toFixed(2);
+                    document.getElementById('cfg-kelly').textContent = cfgData.kelly_fraction;
+                    document.getElementById('cfg-interval').textContent = cfgData.update_interval + 's';
                 }
 
                 document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
