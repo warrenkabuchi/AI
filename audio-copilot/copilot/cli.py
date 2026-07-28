@@ -14,7 +14,8 @@ from .vad import UtteranceChunker
 
 def build_parser():
     p = argparse.ArgumentParser(prog="copilot")
-    p.add_argument("--mode", choices=["copilot", "teleprompter"], default="copilot")
+    p.add_argument("--mode", choices=["copilot", "teleprompter", "practice"],
+                   default="copilot")
     p.add_argument("--source", default="default",
                    help='"default", an input device name (e.g. "BlackHole 2ch"), '
                         'or "file:path.wav"')
@@ -22,12 +23,22 @@ def build_parser():
     p.add_argument("--model", default="base.en", help="whisper model name")
     p.add_argument("--script", default=None,
                    help="script file for teleprompter mode")
+    p.add_argument("--topic", default=None,
+                   help="subject to be quizzed on in practice mode")
+    p.add_argument("--questions", type=int, default=5,
+                   help="how many questions practice mode asks")
     return p
 
 
 def make_mode(args, display, brain=None):
     if args.mode == "copilot":
         return CopilotMode(display, brain.stream)
+    if args.mode == "practice":
+        from .modes.practice import PracticeMode
+        if not args.topic:
+            raise SystemExit("--mode practice requires --topic")
+        return PracticeMode(display, brain.stream, topic=args.topic,
+                            num_questions=args.questions)
     from .modes.teleprompter import TeleprompterMode
     if not args.script:
         raise SystemExit("--mode teleprompter requires --script")
@@ -60,7 +71,8 @@ def main(argv=None):
 
     # Warm the session while whisper loads, so the first real question does
     # not pay the ~10s cold start.
-    brain = Brain(warm_system_prompt=SYSTEM_PROMPT) if args.mode == "copilot" else None
+    needs_brain = args.mode in ("copilot", "practice")
+    brain = Brain(warm_system_prompt=SYSTEM_PROMPT) if needs_brain else None
 
     try:
         if args.display == "terminal":
@@ -68,6 +80,8 @@ def main(argv=None):
             for t in threads:
                 t.start()
             try:
+                if hasattr(mode, "start"):
+                    mode.start()
                 run_mode(mode, event_q)
             except KeyboardInterrupt:
                 pass

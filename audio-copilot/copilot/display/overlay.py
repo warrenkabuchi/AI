@@ -36,6 +36,8 @@ def start_overlay(make_mode, start_pipeline, event_q):
 
     def boot():
         start_pipeline()
+        if hasattr(mode, "start"):
+            mode.start()
         run_mode(mode, event_q)
 
     webview.start(func=boot)

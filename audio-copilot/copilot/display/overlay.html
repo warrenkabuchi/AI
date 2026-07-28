@@ -17,6 +17,10 @@
   #prompter { flex: 1; overflow: hidden; display: none; font-size: 20px; }
   #prompter .line { padding: 3px 0; color: #7a7a84; }
   #prompter .line.current { color: #ffffff; font-weight: 600; }
+  #question { flex: none; display: none; font-size: 17px; font-weight: 600;
+              color: #fff; padding: 6px 0 10px; }
+  #question .counter { display: block; font-size: 11px; font-weight: 400;
+                       color: #6b6b74; letter-spacing: 0.08em; padding-bottom: 4px; }
   #transcript { flex: 1; overflow-y: auto; color: #b9b9c2; }
   #transcript div { padding: 2px 0; }
   #answer { flex: none; max-height: 45%; overflow-y: auto; white-space: pre-wrap;
@@ -30,6 +34,7 @@
 <body>
   <div id="drag" class="pywebview-drag-region">COPILOT</div>
   <div id="status"></div>
+  <div id="question"></div>
   <div id="prompter"></div>
   <div id="transcript"></div>
   <div id="answer"></div>
@@ -58,6 +63,31 @@
       el("answer").textContent += ev.text;
     } else if (ev.event === "status") {
       el("status").textContent = ev.text;
+    } else if (ev.event === "question") {
+      el("question").style.display = "block";
+      el("question").innerHTML = "";
+      const c = document.createElement("span");
+      c.className = "counter";
+      c.textContent = "QUESTION " + ev.index + " OF " + ev.total;
+      el("question").appendChild(c);
+      el("question").appendChild(document.createTextNode(ev.text));
+      el("transcript").innerHTML = "";
+      el("answer").textContent = "";
+    } else if (ev.event === "answer_progress") {
+      el("transcript").innerHTML = "";
+      const d = document.createElement("div");
+      d.textContent = "» " + ev.text;
+      el("transcript").appendChild(d);
+    } else if (ev.event === "critique_start") {
+      el("answer").textContent = "";
+    } else if (ev.event === "critique_chunk") {
+      el("answer").textContent += ev.text;
+    } else if (ev.event === "critique_end") {
+      // answer pane already holds the full critique
+    } else if (ev.event === "summary") {
+      el("question").style.display = "none";
+      el("transcript").innerHTML = "";
+      el("answer").textContent = ev.text;
     } else if (ev.event === "prompter") {
       el("transcript").style.display = "none";
       el("answer").style.display = "none";

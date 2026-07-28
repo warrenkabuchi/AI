@@ -1,7 +1,7 @@
 # Audio Copilot
 
-Local audio -> whisper.cpp -> Claude assistant. Two modes work today
-(teleprompter and meeting copilot); practice mode is planned. See
+Local audio -> whisper.cpp -> Claude assistant, in three modes: teleprompter,
+interview practice, and meeting copilot. See
 `docs/superpowers/specs/2026-07-28-audio-copilot-design.md`.
 
 Everything runs on your machine: transcription is whisper.cpp with Metal
@@ -21,12 +21,22 @@ The whisper model (`base.en`, ~141 MB) downloads on first run.
     .venv/bin/python -m copilot                          # copilot mode, terminal
     .venv/bin/python -m copilot --display overlay        # floating always-on-top window
     .venv/bin/python -m copilot --mode teleprompter --script talk.txt --display overlay
+    .venv/bin/python -m copilot --mode practice --topic "cloud architecture"
     .venv/bin/python -m copilot --source "BlackHole 2ch" # transcribe system audio
     .venv/bin/python -m copilot --source file:tests/fixtures/question.wav  # replay a WAV
     .venv/bin/python scripts/latency_check.py            # measure STT + Claude latency
 
-Teleprompter: the on-window buttons scroll (up / down / back to top), and
+**Teleprompter:** the on-window buttons scroll (up / down / back to top), and
 reading the script aloud advances the highlight on its own.
+
+**Practice:** Claude asks you an interview question on `--topic`, speaks it
+aloud, then listens. Stop talking for ~2.5 seconds and it scores the answer
+out of 10 with specific critiques, then moves to the next question
+(`--questions`, default 5). A session summary closes it out. Commands:
+`done` scores immediately, `skip` moves on unscored, `stop` ends early.
+
+**Copilot:** transcribes continuously and answers any question it hears with
+up to three bullet points, using the last 90 seconds as context.
 
 ## Latency
 
@@ -69,5 +79,5 @@ vocabulary.
 
     .venv/bin/python -m pytest tests -v
 
-51 tests, all offline apart from a one-time `tiny.en` model download. Claude
+69 tests, all offline apart from a one-time `tiny.en` model download. Claude
 is faked in every test; no API calls are made.
