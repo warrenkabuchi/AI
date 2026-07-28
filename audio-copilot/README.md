@@ -20,6 +20,12 @@ The whisper model (`base.en`, ~141 MB) downloads on first run.
 
     .venv/bin/python -m copilot                          # copilot mode, terminal
     .venv/bin/python -m copilot --display overlay        # floating always-on-top window
+
+The overlay is styled like a teleprompter: guidance renders as large,
+high-contrast lines (one idea per line) sized to be read at a glance
+mid-sentence, with the newest line brightest. The live transcript sits in a
+collapsed strip at the bottom — click the chevron to expand the history.
+Drag the window by its title bar; it stays on top of other windows.
     .venv/bin/python -m copilot --mode teleprompter --script talk.txt --display overlay
     .venv/bin/python -m copilot --mode practice --topic "cloud architecture"
     .venv/bin/python -m copilot --source "BlackHole 2ch" # transcribe system audio
@@ -34,6 +40,11 @@ aloud, then listens. Stop talking for ~2.5 seconds and it scores the answer
 out of 10 with specific critiques, then moves to the next question
 (`--questions`, default 5). A session summary closes it out. Commands:
 `done` scores immediately, `skip` moves on unscored, `stop` ends early.
+
+While the app is speaking, the microphone is gated (plus a short tail while
+the audio drains), so the app never transcribes its own voice as your
+answer. Whisper's non-speech markers (`[BLANK_AUDIO]`, `(wind blowing)`)
+are dropped rather than scored.
 
 **Copilot:** transcribes continuously and answers any question it hears with
 up to three bullet points, using the last 90 seconds as context.

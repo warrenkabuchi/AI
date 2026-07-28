@@ -46,3 +46,38 @@ def test_stt_worker_emits_segments():
     assert seg.text == "hello world"
     assert seg.end > seg.start >= 0.0
     assert event_q.get_nowait() is None
+
+
+def test_transcriber_suppresses_whisper_progress_output(monkeypatch):
+    import pywhispercpp.model as pw
+
+    captured = {}
+
+    class FakeModel:
+        def __init__(self, name, **params):
+            captured.update(params)
+
+    monkeypatch.setattr(pw, "Model", FakeModel)
+    from copilot.stt import Transcriber
+    Transcriber("tiny.en")
+    assert captured.get("print_progress") is False
+
+
+def test_non_speech_markers_are_dropped(monkeypatch):
+    import pywhispercpp.model as pw
+
+    class FakeSeg:
+        def __init__(self, text):
+            self.text = text
+
+    class FakeModel:
+        def __init__(self, name, **params):
+            pass
+
+        def transcribe(self, audio):
+            return [FakeSeg(" [BLANK_AUDIO] "), FakeSeg("real speech"),
+                    FakeSeg("(wind blowing)"), FakeSeg("*click*")]
+
+    monkeypatch.setattr(pw, "Model", FakeModel)
+    from copilot.stt import Transcriber
+    assert Transcriber("tiny.en").transcribe(np.zeros(20000)) == "real speech"

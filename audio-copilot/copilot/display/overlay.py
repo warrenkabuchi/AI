@@ -30,7 +30,7 @@ def start_overlay(make_mode, start_pipeline, event_q):
     html = (Path(__file__).parent / "overlay.html").read_text()
     window = webview.create_window("Copilot", html=html, js_api=api,
                                    frameless=True, on_top=True,
-                                   width=420, height=560, x=40, y=60)
+                                   width=500, height=480, x=40, y=60)
     mode = make_mode(OverlayDisplay(window))
     api.mode = mode
 

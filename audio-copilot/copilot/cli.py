@@ -4,7 +4,7 @@ import threading
 from pathlib import Path
 
 from .brain import Brain
-from .capture import FileSource, MicSource
+from .capture import CaptureGate, FileSource, MicSource
 from .devices import DeviceNotFound, format_device_list, resolve_device
 from .display.terminal import TerminalDisplay
 from .modes.copilot_mode import SYSTEM_PROMPT, CopilotMode
@@ -33,7 +33,7 @@ def build_parser():
     return p
 
 
-def make_mode(args, display, brain=None):
+def make_mode(args, display, brain=None, gate=None):
     if args.mode == "copilot":
         return CopilotMode(display, brain.stream)
     if args.mode == "practice":
@@ -41,14 +41,14 @@ def make_mode(args, display, brain=None):
         if not args.topic:
             raise SystemExit("--mode practice requires --topic")
         return PracticeMode(display, brain.stream, topic=args.topic,
-                            num_questions=args.questions)
+                            num_questions=args.questions, gate=gate)
     from .modes.teleprompter import TeleprompterMode
     if not args.script:
         raise SystemExit("--mode teleprompter requires --script")
     return TeleprompterMode(display, Path(args.script).read_text())
 
 
-def build_pipeline(args, audio_q, event_q):
+def build_pipeline(args, audio_q, event_q, gate=None):
     """Returns (source, threads) with threads not yet started."""
     # Resolve the audio source before loading whisper: a bad device name
     # should fail immediately, not after a 141 MB model load.
@@ -59,7 +59,7 @@ def build_pipeline(args, audio_q, event_q):
             device = resolve_device(args.source)
         except DeviceNotFound as e:
             raise SystemExit(str(e))
-        source = MicSource(device, audio_q, event_q)
+        source = MicSource(device, audio_q, event_q, gate=gate)
 
     transcriber = Transcriber(args.model)
     chunker = UtteranceChunker()
@@ -82,7 +82,10 @@ def main(argv=None):
 
     audio_q = queue.Queue(maxsize=50)  # ~5 s backlog cap
     event_q = queue.Queue()
-    source, threads = build_pipeline(args, audio_q, event_q)
+    # The gate mutes capture while the app plays audio of its own, so the
+    # mic never transcribes the app's voice back at it (practice mode).
+    gate = CaptureGate()
+    source, threads = build_pipeline(args, audio_q, event_q, gate)
 
     # Warm the session while whisper loads, so the first real question does
     # not pay the ~10s cold start.
@@ -91,7 +94,7 @@ def main(argv=None):
 
     try:
         if args.display == "terminal":
-            mode = make_mode(args, TerminalDisplay(), brain)
+            mode = make_mode(args, TerminalDisplay(), brain, gate)
             for t in threads:
                 t.start()
             try:
@@ -102,7 +105,7 @@ def main(argv=None):
                 pass
         else:
             from .display.overlay import start_overlay
-            start_overlay(lambda display: make_mode(args, display, brain),
+            start_overlay(lambda display: make_mode(args, display, brain, gate),
                           lambda: [t.start() for t in threads], event_q)
     finally:
         if hasattr(source, "stop"):

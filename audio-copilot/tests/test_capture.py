@@ -3,7 +3,7 @@ import wave
 
 import numpy as np
 
-from copilot.capture import FileSource, MicSource
+from copilot.capture import CaptureGate, FileSource, MicSource
 from copilot.events import Status
 
 
@@ -98,3 +98,62 @@ def test_mic_source_drops_oldest_when_full():
     assert isinstance(st, Status) and st.kind == "lagging"
     src._push(b1)  # still lagging episode: no duplicate status
     assert event_q.empty()
+
+
+class FakeClock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+def test_gate_mutes_while_held_and_through_the_tail():
+    clock = FakeClock()
+    gate = CaptureGate(tail_s=0.5, clock=clock)
+    assert not gate.muted()
+    with gate:
+        assert gate.muted()
+    assert gate.muted()          # tail: output is still draining
+    clock.t = 0.4
+    assert gate.muted()
+    clock.t = 0.6
+    assert not gate.muted()
+
+
+def test_gate_nested_holds_release_only_when_all_exit():
+    clock = FakeClock()
+    gate = CaptureGate(tail_s=0.0, clock=clock)
+    gate.acquire()
+    gate.acquire()
+    gate.release()
+    assert gate.muted()
+    gate.release()
+    assert not gate.muted()
+
+
+def test_mic_source_discards_blocks_while_gate_is_muted():
+    audio_q, event_q = queue.Queue(), queue.Queue()
+    clock = FakeClock()
+    gate = CaptureGate(tail_s=0.3, clock=clock)
+    src = MicSource(None, audio_q, event_q, gate=gate)
+    loud = np.full(1600, 0.05, dtype=np.float32)
+
+    src._push(loud)
+    with gate:
+        src._push(loud)          # captured while the app is speaking
+    src._push(loud)              # tail window: still the app's own audio
+    clock.t = 1.0
+    src._push(loud)
+
+    assert audio_q.qsize() == 2  # only the pre- and post-speech blocks
+
+
+def test_muted_blocks_do_not_feed_the_silence_watchdog():
+    audio_q, event_q = queue.Queue(), queue.Queue()
+    gate = CaptureGate(tail_s=0.0)
+    src = MicSource(None, audio_q, event_q, silence_warn_s=1.0, gate=gate)
+    with gate:
+        for b in blocks_of(0.0, 1.5):
+            src._push(b)
+    assert [s for s in drain_statuses(event_q) if s.kind == "silent"] == []

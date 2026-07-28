@@ -1,12 +1,20 @@
+import re
+
 import numpy as np
 
 from .events import Segment
+
+# Whisper labels non-speech audio with bracketed markers — "[BLANK_AUDIO]",
+# "(wind blowing)", "*click*" — which read as real answers downstream.
+_NON_SPEECH = re.compile(r"^[\[\(\*].*[\]\)\*]$")
 
 
 class Transcriber:
     def __init__(self, model_name="base.en"):
         from pywhispercpp.model import Model
-        self._model = Model(model_name)
+        # print_progress defaults on and floods the terminal with
+        # "Progress: 0%" lines on every transcription.
+        self._model = Model(model_name, print_progress=False)
 
     def transcribe(self, audio):
         sr = 16000
@@ -14,7 +22,8 @@ class Transcriber:
         if len(audio) < min_len:
             audio = np.pad(audio, (0, min_len - len(audio)))
         segments = self._model.transcribe(audio)
-        return " ".join(s.text.strip() for s in segments).strip()
+        texts = (s.text.strip() for s in segments)
+        return " ".join(t for t in texts if t and not _NON_SPEECH.match(t))
 
 
 def stt_worker(audio_q, event_q, transcriber, chunker):

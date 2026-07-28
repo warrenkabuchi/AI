@@ -31,6 +31,44 @@ class FileSource:
         self.audio_q.put(None)
 
 
+class CaptureGate:
+    """Mutes capture while the app plays its own audio (e.g. `say`).
+
+    Held via `with gate:` around playback. Stays muted for `tail_s` after
+    release because the last of the playback is still draining through the
+    output device and the input buffers when the subprocess returns —
+    blocks arriving in that window are the app's own voice, not the user.
+    """
+
+    def __init__(self, tail_s=0.4, clock=time.monotonic):
+        self.tail_s = tail_s
+        self._clock = clock
+        self._holds = 0
+        self._until = 0.0
+        self._lock = threading.Lock()
+
+    def acquire(self):
+        with self._lock:
+            self._holds += 1
+
+    def release(self):
+        with self._lock:
+            self._holds = max(0, self._holds - 1)
+            if self._holds == 0:
+                self._until = self._clock() + self.tail_s
+
+    def muted(self):
+        with self._lock:
+            return self._holds > 0 or self._clock() < self._until
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+
+
 BLACKHOLE_HINT = (
     "no signal. Open Audio MIDI Setup, create a Multi-Output Device "
     "containing both your speakers and BlackHole, and select it as the "
@@ -55,13 +93,14 @@ class MicSource:
     """
 
     def __init__(self, device, audio_q, event_q, block_s=0.1, sample_rate=16000,
-                 silence_warn_s=10.0):
+                 silence_warn_s=10.0, gate=None):
         self.device = device
         self.audio_q = audio_q
         self.event_q = event_q
         self.block_s = block_s
         self.sample_rate = sample_rate
         self.silence_warn_s = silence_warn_s
+        self.gate = gate
         self._stop = threading.Event()
         self._lagging = False
         self._silent_s = 0.0
@@ -108,6 +147,8 @@ class MicSource:
             self.event_q.put(Status("silent", f"{name}: {hint}"))
 
     def _push(self, block):
+        if self.gate is not None and self.gate.muted():
+            return
         self._watch_silence(block)
         try:
             self.audio_q.put_nowait(block)

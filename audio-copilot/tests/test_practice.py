@@ -194,3 +194,31 @@ def test_status_forwarded():
     d, mode, sched, spoken, brain = make()
     mode.on_status(Status("audio_lost", "gone"))
     assert d.last("status")["text"] == "audio_lost: gone"
+
+
+class FakeGate:
+    def __init__(self):
+        self.held = False
+        self.holds = 0
+
+    def __enter__(self):
+        self.held = True
+        self.holds += 1
+        return self
+
+    def __exit__(self, *exc):
+        self.held = False
+
+
+def test_speaking_holds_the_capture_gate():
+    gate = FakeGate()
+    seen = []
+    d = FakeDisplay()
+    brain = scripted_brain("What is idempotency?")
+    mode = PracticeMode(d, brain, topic="devops",
+                        speak=lambda t: seen.append(gate.held),
+                        scheduler=FakeScheduler(), num_questions=1, gate=gate)
+    mode.start()
+    assert seen == [True]        # mic was gated for the whole utterance
+    assert not gate.held         # and released afterwards
+    assert gate.holds == 1

@@ -50,11 +50,12 @@ def _timer(delay, fn):
 
 class PracticeMode:
     def __init__(self, display, brain_fn, topic, speak=None, scheduler=None,
-                 num_questions=5, answer_gap_s=2.5):
+                 num_questions=5, answer_gap_s=2.5, gate=None):
         self.display = display
         self.brain_fn = brain_fn
         self.topic = topic
         self.speak = speak or _say
+        self.gate = gate
         self.scheduler = scheduler or _timer
         self.num_questions = num_questions
         self.answer_gap_s = answer_gap_s
@@ -123,7 +124,15 @@ class PracticeMode:
         self.listening = True
         self.display.update({"event": "question", "text": self.question,
                              "index": self.index, "total": self.num_questions})
-        self.speak(self.question)
+        self._speak(self.question)
+
+    def _speak(self, text):
+        """Speaks with the capture gate held so the mic doesn't hear us."""
+        if self.gate is None:
+            self.speak(text)
+            return
+        with self.gate:
+            self.speak(text)
 
     def _finish_answer(self):
         answer = " ".join(self.answer_parts).strip()

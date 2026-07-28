@@ -7,37 +7,95 @@
   html, body { height: 100%; }
   body {
     font: 14px/1.45 -apple-system, "SF Pro Text", sans-serif;
-    background: rgba(18, 18, 22, 0.92); color: #e8e8ec;
-    display: flex; flex-direction: column; padding: 12px;
-    -webkit-user-select: none;
+    background: rgba(12, 12, 16, 0.96); color: #f2f2f5;
+    display: flex; flex-direction: column;
+    -webkit-user-select: none; overflow: hidden;
   }
-  #drag { height: 18px; cursor: move; flex: none; color: #6b6b74;
-          font-size: 11px; letter-spacing: 0.08em; }
-  #status { flex: none; color: #9a9aa4; font-size: 11px; min-height: 15px; }
-  #prompter { flex: 1; overflow: hidden; display: none; font-size: 20px; }
-  #prompter .line { padding: 3px 0; color: #7a7a84; }
-  #prompter .line.current { color: #ffffff; font-weight: 600; }
-  #question { flex: none; display: none; font-size: 17px; font-weight: 600;
-              color: #fff; padding: 6px 0 10px; }
-  #question .counter { display: block; font-size: 11px; font-weight: 400;
-                       color: #6b6b74; letter-spacing: 0.08em; padding-bottom: 4px; }
-  #transcript { flex: 1; overflow-y: auto; color: #b9b9c2; }
-  #transcript div { padding: 2px 0; }
-  #answer { flex: none; max-height: 45%; overflow-y: auto; white-space: pre-wrap;
-            border-top: 1px solid #33333c; margin-top: 8px; padding-top: 8px; }
-  #controls { flex: none; display: none; gap: 8px; padding-top: 8px; }
-  #controls button { background: #2a2a32; border: 0; border-radius: 6px;
-                     color: #e8e8ec; padding: 6px 14px; cursor: pointer; }
-  svg { width: 16px; height: 16px; vertical-align: middle; }
+
+  /* header: drag region + status */
+  #bar { flex: none; display: flex; align-items: center; gap: 10px;
+         padding: 10px 16px 8px; cursor: move; }
+  #bar .word { color: #6b6b74; font-size: 11px; font-weight: 600;
+               letter-spacing: 0.14em; }
+  #status { display: flex; align-items: center; gap: 6px; margin-left: auto;
+            color: #8a8a94; font-size: 11px; min-width: 0; }
+  #status span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #dot { flex: none; width: 7px; height: 7px; border-radius: 50%;
+         background: #4a4a52; }
+  #dot.ok { background: #37b26f; }
+  #dot.warn { background: #d9a13c; }
+  #dot.err { background: #d95c5c; }
+
+  /* practice question */
+  #question { flex: none; display: none; padding: 4px 16px 12px;
+              border-bottom: 1px solid #26262e; }
+  #question .counter { display: block; font-size: 10px; font-weight: 600;
+                       color: #6b6b74; letter-spacing: 0.12em;
+                       padding-bottom: 5px; }
+  #question .qtext { font-size: 17px; font-weight: 600; line-height: 1.35;
+                     color: #d7d7de; }
+
+  /* guidance: the teleprompter pane, the thing you read mid-sentence */
+  #guidance { flex: 1; overflow-y: auto; padding: 14px 16px;
+              scroll-behavior: smooth; }
+  #guidance::-webkit-scrollbar { display: none; }
+  #guidance .hint { color: #55555e; font-size: 14px; }
+  #guidance .g-line { font-size: 26px; font-weight: 600; line-height: 1.4;
+                      letter-spacing: -0.01em; color: #b9b9c4;
+                      padding: 7px 0; }
+  #guidance .g-line.fresh { color: #ffffff; }
+
+  /* teleprompter script mode */
+  #prompter { flex: 1; overflow: hidden; display: none; padding: 14px 16px; }
+  #prompter .line { font-size: 20px; line-height: 1.45; padding: 5px 0;
+                    color: #6f6f79; }
+  #prompter .line.current { font-size: 28px; font-weight: 700;
+                            color: #ffffff; }
+
+  /* transcript: reference, tucked into a strip at the bottom */
+  #tbar { flex: none; display: flex; align-items: center; gap: 8px;
+          padding: 8px 12px 8px 16px; border-top: 1px solid #26262e; }
+  #tlatest { flex: 1; color: #7d7d88; font-size: 12px; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  #tbar button { flex: none; display: flex; background: none; border: 0;
+                 color: #6b6b74; padding: 2px; cursor: pointer; }
+  #tbar button:hover { color: #b9b9c4; }
+  #thistory { flex: none; display: none; max-height: 130px; overflow-y: auto;
+              padding: 4px 16px 10px; color: #7d7d88; font-size: 12px;
+              line-height: 1.5; }
+  #thistory div { padding: 1px 0; }
+
+  /* scroll controls (teleprompter mode) */
+  #controls { flex: none; display: none; gap: 8px; padding: 0 16px 12px; }
+  #controls button { display: flex; align-items: center; justify-content: center;
+                     background: #26262e; border: 0; border-radius: 6px;
+                     color: #d7d7de; padding: 7px 16px; cursor: pointer; }
+  #controls button:hover { background: #32323c; }
+  svg { width: 16px; height: 16px; }
 </style>
 </head>
 <body>
-  <div id="drag" class="pywebview-drag-region">COPILOT</div>
-  <div id="status"></div>
-  <div id="question"></div>
+  <div id="bar" class="pywebview-drag-region">
+    <span class="word">COPILOT</span>
+    <div id="status"><div id="dot"></div><span id="status-text"></span></div>
+  </div>
+
+  <div id="question">
+    <span class="counter"></span>
+    <div class="qtext"></div>
+  </div>
+
+  <div id="guidance"><div class="hint">Listening. Guidance appears here when a question comes up.</div></div>
   <div id="prompter"></div>
-  <div id="transcript"></div>
-  <div id="answer"></div>
+
+  <div id="tbar">
+    <span id="tlatest"></span>
+    <button id="ttoggle" aria-label="show transcript">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
+    </button>
+  </div>
+  <div id="thistory"></div>
+
   <div id="controls">
     <button onclick="pywebview.api.command('up')" aria-label="scroll up">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
@@ -49,54 +107,97 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 11-5-5-5 5"/><path d="M12 6v12"/></svg>
     </button>
   </div>
+
 <script>
   const el = id => document.getElementById(id);
+  let gbuf = "";
+
+  // One idea per line: split the streamed text on newlines and strip
+  // whatever bullet markers the model chose, so every line renders the same.
+  function guidanceLines(text) {
+    return text.split("\n")
+      .map(l => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim())
+      .filter(l => l.length > 0);
+  }
+
+  function renderGuidance() {
+    const g = el("guidance");
+    g.innerHTML = "";
+    const lines = guidanceLines(gbuf);
+    if (lines.length === 0) return;
+    lines.forEach((line, i) => {
+      const d = document.createElement("div");
+      d.className = "g-line" + (i === lines.length - 1 ? " fresh" : "");
+      d.textContent = line;
+      g.appendChild(d);
+    });
+    g.scrollTop = g.scrollHeight;
+  }
+
+  function setGuidance(text) { gbuf = text; renderGuidance(); }
+
+  function setStatus(text) {
+    el("status-text").textContent = text;
+    const kind = text.split(":")[0].trim();
+    const dot = el("dot");
+    dot.className =
+      kind === "audio_ok" ? "ok" :
+      (kind === "silent" || kind === "lagging") ? "warn" :
+      (kind === "audio_lost" || kind.indexOf("error") !== -1) ? "err" : "";
+  }
+
+  function addTranscript(text) {
+    el("tlatest").textContent = text;
+    const h = el("thistory");
+    const d = document.createElement("div");
+    d.textContent = text;
+    h.appendChild(d);
+    while (h.childElementCount > 200) h.removeChild(h.firstChild);
+    h.scrollTop = h.scrollHeight;
+  }
+
+  el("ttoggle").onclick = () => {
+    const h = el("thistory");
+    const open = h.style.display === "block";
+    h.style.display = open ? "none" : "block";
+    el("ttoggle").firstElementChild.style.transform =
+      open ? "" : "rotate(180deg)";
+    if (!open) h.scrollTop = h.scrollHeight;
+  };
+
   function handleEvent(ev) {
     if (ev.event === "segment") {
-      const d = document.createElement("div");
-      d.textContent = "» " + ev.text;
-      el("transcript").appendChild(d);
-      el("transcript").scrollTop = el("transcript").scrollHeight;
-    } else if (ev.event === "answer_start") {
-      el("answer").textContent = "";
-    } else if (ev.event === "answer_chunk") {
-      el("answer").textContent += ev.text;
+      addTranscript(ev.text);
+    } else if (ev.event === "answer_start" || ev.event === "critique_start") {
+      setGuidance("");
+    } else if (ev.event === "answer_chunk" || ev.event === "critique_chunk") {
+      gbuf += ev.text;
+      renderGuidance();
     } else if (ev.event === "status") {
-      el("status").textContent = ev.text;
+      setStatus(ev.text);
     } else if (ev.event === "question") {
       el("question").style.display = "block";
-      el("question").innerHTML = "";
-      const c = document.createElement("span");
-      c.className = "counter";
-      c.textContent = "QUESTION " + ev.index + " OF " + ev.total;
-      el("question").appendChild(c);
-      el("question").appendChild(document.createTextNode(ev.text));
-      el("transcript").innerHTML = "";
-      el("answer").textContent = "";
+      el("question").querySelector(".counter").textContent =
+        "QUESTION " + ev.index + " OF " + ev.total;
+      el("question").querySelector(".qtext").textContent = ev.text;
+      el("tlatest").textContent = "";
+      setGuidance("");
     } else if (ev.event === "answer_progress") {
-      el("transcript").innerHTML = "";
-      const d = document.createElement("div");
-      d.textContent = "» " + ev.text;
-      el("transcript").appendChild(d);
-    } else if (ev.event === "critique_start") {
-      el("answer").textContent = "";
-    } else if (ev.event === "critique_chunk") {
-      el("answer").textContent += ev.text;
-    } else if (ev.event === "critique_end") {
-      // answer pane already holds the full critique
+      el("tlatest").textContent = "You: " + ev.text;
     } else if (ev.event === "summary") {
       el("question").style.display = "none";
-      el("transcript").innerHTML = "";
-      el("answer").textContent = ev.text;
+      setGuidance(ev.text);
     } else if (ev.event === "prompter") {
-      el("transcript").style.display = "none";
-      el("answer").style.display = "none";
+      el("question").style.display = "none";
+      el("guidance").style.display = "none";
+      el("tbar").style.display = "none";
+      el("thistory").style.display = "none";
       el("prompter").style.display = "block";
       el("controls").style.display = "flex";
       const p = el("prompter");
       p.innerHTML = "";
       const lo = Math.max(0, ev.pos - 1);
-      const hi = Math.min(ev.lines.length, ev.pos + 8);
+      const hi = Math.min(ev.lines.length, ev.pos + 7);
       for (let i = lo; i < hi; i++) {
         const d = document.createElement("div");
         d.className = "line" + (i === ev.pos ? " current" : "");
