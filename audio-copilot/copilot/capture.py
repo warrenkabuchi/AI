@@ -31,17 +31,41 @@ class FileSource:
         self.audio_q.put(None)
 
 
-class MicSource:
-    """Captures a live input device; retries when the device disappears."""
+BLACKHOLE_HINT = (
+    "no signal. Open Audio MIDI Setup, create a Multi-Output Device "
+    "containing both your speakers and BlackHole, and select it as the "
+    "system output in Sound settings."
+)
+GENERIC_SILENCE_HINT = (
+    "no signal. Check the device is unmuted and is the one carrying the "
+    "audio you want."
+)
 
-    def __init__(self, device, audio_q, event_q, block_s=0.1, sample_rate=16000):
+# A live mic picks up room noise well above this; a mis-routed virtual device
+# delivers mathematical zero. The gap is what makes the warning trustworthy.
+_SILENCE_RMS = 1e-5
+
+
+class MicSource:
+    """Captures a live input device; retries when the device disappears.
+
+    Also watches for an input that is connected but delivering pure silence,
+    which is the usual symptom of a virtual device with nothing routed into
+    it — otherwise indistinguishable from "nobody is talking".
+    """
+
+    def __init__(self, device, audio_q, event_q, block_s=0.1, sample_rate=16000,
+                 silence_warn_s=10.0):
         self.device = device
         self.audio_q = audio_q
         self.event_q = event_q
         self.block_s = block_s
         self.sample_rate = sample_rate
+        self.silence_warn_s = silence_warn_s
         self._stop = threading.Event()
         self._lagging = False
+        self._silent_s = 0.0
+        self._warned_silent = False
 
     def run(self):
         import sounddevice as sd
@@ -67,7 +91,24 @@ class MicSource:
     def _callback(self, indata, frames, time_info, status):
         self._push(indata[:, 0].copy())
 
+    def _watch_silence(self, block):
+        rms = float(np.sqrt(np.mean(block.astype(np.float64) ** 2)))
+        if rms > _SILENCE_RMS:
+            if self._warned_silent:
+                self.event_q.put(Status("audio_ok", "signal restored"))
+            self._silent_s = 0.0
+            self._warned_silent = False
+            return
+        self._silent_s += len(block) / self.sample_rate
+        if self._silent_s >= self.silence_warn_s and not self._warned_silent:
+            self._warned_silent = True
+            name = str(self.device or "default")
+            hint = (BLACKHOLE_HINT if "blackhole" in name.lower()
+                    else GENERIC_SILENCE_HINT)
+            self.event_q.put(Status("silent", f"{name}: {hint}"))
+
     def _push(self, block):
+        self._watch_silence(block)
         try:
             self.audio_q.put_nowait(block)
             self._lagging = False

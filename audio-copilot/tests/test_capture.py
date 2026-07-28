@@ -30,6 +30,60 @@ def test_file_source_replays_blocks(tmp_path):
     assert abs(float(total[0]) - (-0.5)) < 0.001
 
 
+def blocks_of(value, seconds, sr=16000, block_s=0.1):
+    n = int(sr * block_s)
+    return [np.full(n, value, dtype=np.float32)] * int(seconds / block_s)
+
+
+def drain_statuses(event_q):
+    out = []
+    while not event_q.empty():
+        out.append(event_q.get_nowait())
+    return out
+
+
+def test_warns_when_input_is_digitally_silent():
+    audio_q, event_q = queue.Queue(), queue.Queue()
+    src = MicSource("BlackHole 2ch", audio_q, event_q, silence_warn_s=1.0)
+    for b in blocks_of(0.0, 1.5):
+        src._push(b)
+    kinds = [(s.kind, s.detail) for s in drain_statuses(event_q)]
+    silent = [d for k, d in kinds if k == "silent"]
+    assert len(silent) == 1                      # warns once, not every block
+    assert "multi-output" in silent[0].lower()   # BlackHole-specific guidance
+
+
+def test_silence_warning_names_the_device_generically_for_a_mic():
+    audio_q, event_q = queue.Queue(), queue.Queue()
+    src = MicSource("MacBook Air Microphone", audio_q, event_q, silence_warn_s=1.0)
+    for b in blocks_of(0.0, 1.5):
+        src._push(b)
+    silent = [s for s in drain_statuses(event_q) if s.kind == "silent"]
+    assert len(silent) == 1
+    assert "multi-output" not in silent[0].detail.lower()
+
+
+def test_signal_resets_the_silence_watchdog():
+    audio_q, event_q = queue.Queue(), queue.Queue()
+    src = MicSource(None, audio_q, event_q, silence_warn_s=1.0)
+    for b in blocks_of(0.0, 0.8):
+        src._push(b)
+    src._push(np.full(1600, 0.05, dtype=np.float32))  # sound arrives
+    for b in blocks_of(0.0, 0.8):
+        src._push(b)
+    assert [s for s in drain_statuses(event_q) if s.kind == "silent"] == []
+
+
+def test_recovery_after_silence_is_reported():
+    audio_q, event_q = queue.Queue(), queue.Queue()
+    src = MicSource(None, audio_q, event_q, silence_warn_s=1.0)
+    for b in blocks_of(0.0, 1.5):
+        src._push(b)
+    src._push(np.full(1600, 0.05, dtype=np.float32))
+    kinds = [s.kind for s in drain_statuses(event_q)]
+    assert kinds == ["silent", "audio_ok"]
+
+
 def test_mic_source_drops_oldest_when_full():
     audio_q = queue.Queue(maxsize=2)
     event_q = queue.Queue()

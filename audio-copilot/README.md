@@ -63,8 +63,22 @@ To transcribe other apps' audio (Teams, Zoom, a browser) you need BlackHole
 4. Run with `--source "BlackHole 2ch"`.
 
 You keep hearing audio through your speakers; the app reads the BlackHole
-side. If the device disappears the app shows `audio_lost` and retries every
-2 seconds rather than exiting.
+side. Device names can be partial and are case-insensitive, so `--source
+blackhole` is enough. To see what is available:
+
+    .venv/bin/python -m copilot --list-devices
+
+**If you skip step 3** the app connects fine and then transcribes nothing,
+because BlackHole receives digital silence. Rather than looking broken, it
+says so after ten seconds:
+
+    [silent: BlackHole 2ch: no signal. Open Audio MIDI Setup, create a
+     Multi-Output Device containing both your speakers and BlackHole, and
+     select it as the system output in Sound settings.]
+
+It reports `audio_ok: signal restored` once sound arrives. If the device
+disappears entirely you get `audio_lost` and it retries every 2 seconds
+rather than exiting.
 
 ## Transcription accuracy
 
@@ -79,5 +93,5 @@ vocabulary.
 
     .venv/bin/python -m pytest tests -v
 
-69 tests, all offline apart from a one-time `tiny.en` model download. Claude
+80 tests, all offline apart from a one-time `tiny.en` model download. Claude
 is faked in every test; no API calls are made.

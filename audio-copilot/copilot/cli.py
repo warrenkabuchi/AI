@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .brain import Brain
 from .capture import FileSource, MicSource
+from .devices import DeviceNotFound, format_device_list, resolve_device
 from .display.terminal import TerminalDisplay
 from .modes.copilot_mode import SYSTEM_PROMPT, CopilotMode
 from .runner import run_mode
@@ -27,6 +28,8 @@ def build_parser():
                    help="subject to be quizzed on in practice mode")
     p.add_argument("--questions", type=int, default=5,
                    help="how many questions practice mode asks")
+    p.add_argument("--list-devices", action="store_true",
+                   help="print available audio input devices and exit")
     return p
 
 
@@ -47,13 +50,19 @@ def make_mode(args, display, brain=None):
 
 def build_pipeline(args, audio_q, event_q):
     """Returns (source, threads) with threads not yet started."""
-    transcriber = Transcriber(args.model)
-    chunker = UtteranceChunker()
+    # Resolve the audio source before loading whisper: a bad device name
+    # should fail immediately, not after a 141 MB model load.
     if args.source.startswith("file:"):
         source = FileSource(args.source[5:], audio_q, realtime=True)
     else:
-        device = None if args.source == "default" else args.source
+        try:
+            device = resolve_device(args.source)
+        except DeviceNotFound as e:
+            raise SystemExit(str(e))
         source = MicSource(device, audio_q, event_q)
+
+    transcriber = Transcriber(args.model)
+    chunker = UtteranceChunker()
     threads = [
         threading.Thread(target=source.run, daemon=True),
         threading.Thread(target=stt_worker,
@@ -65,6 +74,12 @@ def build_pipeline(args, audio_q, event_q):
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+
+    if args.list_devices:
+        print("Audio input devices:")
+        print(format_device_list())
+        return
+
     audio_q = queue.Queue(maxsize=50)  # ~5 s backlog cap
     event_q = queue.Queue()
     source, threads = build_pipeline(args, audio_q, event_q)
