@@ -1,0 +1,6 @@
+sounddevice
+numpy
+pywhispercpp
+claude-agent-sdk
+pywebview
+pytest
