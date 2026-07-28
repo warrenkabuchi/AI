@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font: 14px/1.45 -apple-system, "SF Pro Text", sans-serif;
+    background: rgba(18, 18, 22, 0.92); color: #e8e8ec;
+    display: flex; flex-direction: column; padding: 12px;
+    -webkit-user-select: none;
+  }
+  #drag { height: 18px; cursor: move; flex: none; color: #6b6b74;
+          font-size: 11px; letter-spacing: 0.08em; }
+  #status { flex: none; color: #9a9aa4; font-size: 11px; min-height: 15px; }
+  #prompter { flex: 1; overflow: hidden; display: none; font-size: 20px; }
+  #prompter .line { padding: 3px 0; color: #7a7a84; }
+  #prompter .line.current { color: #ffffff; font-weight: 600; }
+  #transcript { flex: 1; overflow-y: auto; color: #b9b9c2; }
+  #transcript div { padding: 2px 0; }
+  #answer { flex: none; max-height: 45%; overflow-y: auto; white-space: pre-wrap;
+            border-top: 1px solid #33333c; margin-top: 8px; padding-top: 8px; }
+  #controls { flex: none; display: none; gap: 8px; padding-top: 8px; }
+  #controls button { background: #2a2a32; border: 0; border-radius: 6px;
+                     color: #e8e8ec; padding: 6px 14px; cursor: pointer; }
+  svg { width: 16px; height: 16px; vertical-align: middle; }
+</style>
+</head>
+<body>
+  <div id="drag" class="pywebview-drag-region">COPILOT</div>
+  <div id="status"></div>
+  <div id="prompter"></div>
+  <div id="transcript"></div>
+  <div id="answer"></div>
+  <div id="controls">
+    <button onclick="pywebview.api.command('up')" aria-label="scroll up">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 15-6-6-6 6"/></svg>
+    </button>
+    <button onclick="pywebview.api.command('down')" aria-label="scroll down">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <button onclick="pywebview.api.command('top')" aria-label="back to top">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 11-5-5-5 5"/><path d="M12 6v12"/></svg>
+    </button>
+  </div>
+<script>
+  const el = id => document.getElementById(id);
+  function handleEvent(ev) {
+    if (ev.event === "segment") {
+      const d = document.createElement("div");
+      d.textContent = "» " + ev.text;
+      el("transcript").appendChild(d);
+      el("transcript").scrollTop = el("transcript").scrollHeight;
+    } else if (ev.event === "answer_start") {
+      el("answer").textContent = "";
+    } else if (ev.event === "answer_chunk") {
+      el("answer").textContent += ev.text;
+    } else if (ev.event === "status") {
+      el("status").textContent = ev.text;
+    } else if (ev.event === "prompter") {
+      el("transcript").style.display = "none";
+      el("answer").style.display = "none";
+      el("prompter").style.display = "block";
+      el("controls").style.display = "flex";
+      const p = el("prompter");
+      p.innerHTML = "";
+      const lo = Math.max(0, ev.pos - 1);
+      const hi = Math.min(ev.lines.length, ev.pos + 8);
+      for (let i = lo; i < hi; i++) {
+        const d = document.createElement("div");
+        d.className = "line" + (i === ev.pos ? " current" : "");
+        d.textContent = ev.lines[i];
+        p.appendChild(d);
+      }
+    }
+  }
+</script>
+</body>
+</html>
